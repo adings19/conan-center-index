@@ -28,11 +28,6 @@ class MAVSDKConan(ConanFile):
         }
 
     @property
-    def _build_testing(self):
-        # TODO: DISABLED for time-being
-        return False and not self.conf.get("tools.build:skip_test",
-                             default=True, check_type=bool)
-
     def export_sources(self):
         pass
         #export_conandata_patches(self)
@@ -54,8 +49,7 @@ class MAVSDKConan(ConanFile):
             self.options.rm_safe("fPIC")
 
     def build_requirements(self):
-        if self._build_testing:
-            self.test_requires("gtest/1.10.0")
+        pass
 
     def source(self):
         get(self, **self.conan_data["sources"][self.version]["sdk"], strip_root=True)
@@ -65,35 +59,10 @@ class MAVSDKConan(ConanFile):
         git = Git(self, folder=mavlink_dir)
         git.fetch_commit(sources["url"], sources["commit"])
 
-        # tinyxml.h is used in camera_definition_test, so unit_tests must link to tinyxml2::tinyxml2
-        replace_in_file(self, join(self.source_folder, "src", "cmake", "unit_tests.cmake"),
-                        "gtest_main", "gtest_main\n    tinyxml2::tinyxml2")
-
         # TODO: create instead patch files to simplify building versions
         replace_in_file(self, join(self.source_folder, "CMakeLists.txt"),
                         'message(STATUS "Version: ${VERSION_STR}")',
                         f'set(VERSION_STR v{self.version})\nmessage(STATUS "Version: ${{VERSION_STR}}")')
-
-        replace_in_file(self, join(self.source_folder, "src", "CMakeLists.txt"),
-                        'add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third_party/gtest EXCLUDE_FROM_ALL)',
-                        '')
-
-        # Link gtest from conan
-        tests = [(join(self.source_folder, "src", "integration_tests", "CMakeLists.txt"), "integration_tests"),
-                 (join(self.source_folder, "src", "cmake", "unit_tests.cmake"), "unit_tests")]
-
-        gtests = [("    gtest_main", "    GTest::Main"),
-                  ("    gtest", "    GTest::gtest"),
-                  ("    gmock", "    GTest::gmock")]
-
-        for a_test in tests:
-            replace_in_file(self, a_test[0],
-                            f"target_link_libraries({a_test[1]}_runner",
-                            f"find_package(GTest REQUIRED)\ntarget_link_libraries({a_test[1]}_runner")
-
-            for gt in gtests:
-                replace_in_file(self, a_test[0],
-                                gt[0], gt[1])
 
         replace_in_file(self, join(self.source_folder, "src/core/connection.h"),
                         "#include <unordered_set>",
@@ -111,7 +80,6 @@ class MAVSDKConan(ConanFile):
         tc = CMakeToolchain(self)
         tc.variables["SUPERBUILD"] = False
         tc.variables["BUILD_MAVSDK_SERVER"] = False
-        tc.variables["BUILD_TESTS"] = self._build_testing
         tc.generate()
 
         deps = CMakeDeps(self)
@@ -123,12 +91,6 @@ class MAVSDKConan(ConanFile):
         cmake = CMake(self)
         cmake.configure()
         cmake.build()
-
-        if self._build_testing:
-            env = Environment()
-            env.define("CTEST_OUTPUT_ON_FAILURE", "ON")
-            with env.vars(self).apply():
-                cmake.test()
 
     def package(self):
         cmake = CMake(self)
